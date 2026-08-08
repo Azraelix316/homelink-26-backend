@@ -2,20 +2,23 @@
   "name": "homelink-backend",
   "version": "1.0.0",
   "description": "HomeLink backend infrastructure using AWS CDK",
-  "main": "lib/main.js",
+  "main": "bin/homelink-26-backend.js",
   "scripts": {
+    "build": "echo \"The build step is not required when using JavaScript!\" && exit 0",
     "cdk": "cdk",
     "cdk:synth": "cdk synth",
     "cdk:diff": "cdk diff",
-    "cdk:deploy": "cdk deploy --require-approval=never",
-    "cdk:destroy": "cdk destroy --force"
+    "cdk:deploy": "cdk deploy --require-approval=never --profile homelink",
+    "cdk:destroy": "cdk destroy --force --profile homelink",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.109.0",
+    "jest": "^29.0.0"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.109.0",
     "constructs": "^10.0.0",
     "aws-sdk": "^2.1600.0"
-  },
-  "devDependencies": {
-    "aws-cdk": "^2.109.0"
   }
 }
