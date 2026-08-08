@@ -1,0 +1,21 @@
+{
+  "name": "homelink-backend",
+  "version": "1.0.0",
+  "description": "HomeLink backend infrastructure using AWS CDK",
+  "main": "lib/main.js",
+  "scripts": {
+    "cdk": "cdk",
+    "cdk:synth": "cdk synth",
+    "cdk:diff": "cdk diff",
+    "cdk:deploy": "cdk deploy --require-approval=never",
+    "cdk:destroy": "cdk destroy --force"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.109.0",
+    "constructs": "^10.0.0",
+    "aws-sdk": "^2.1600.0"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.109.0"
+  }
+}

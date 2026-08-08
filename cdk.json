@@ -1,0 +1,10 @@
+{
+  "app": "node lib/main.js",
+  "context": {
+    "@aws-cdk/core:enableStackNameDuplicates": true,
+    "@aws-cdk/aws-apigateway:usagePlanKeyOrderInsensitiveId": true,
+    "@aws-cdk/core:stackRelativeExports": true,
+    "@aws-cdk/aws-rds:lowercaseDbIdentifier": true,
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true
+  }
+}
