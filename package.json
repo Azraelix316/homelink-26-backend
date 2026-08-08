@@ -5,10 +5,11 @@
   "main": "bin/homelink-26-backend.js",
   "scripts": {
     "build": "echo \"The build step is not required when using JavaScript!\" && exit 0",
+    "install:lambdas": "node scripts/install-lambdas.js",
     "cdk": "cdk",
     "cdk:synth": "cdk synth",
     "cdk:diff": "cdk diff",
-    "cdk:deploy": "cdk deploy --require-approval=never --profile homelink",
+    "cdk:deploy": "npm run install:lambdas && cdk deploy --require-approval=never --profile homelink",
     "cdk:destroy": "cdk destroy --force --profile homelink",
     "test": "jest"
   },
