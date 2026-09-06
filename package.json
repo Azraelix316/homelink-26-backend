@@ -20,6 +20,7 @@
   "dependencies": {
     "aws-cdk-lib": "^2.109.0",
     "constructs": "^10.0.0",
-    "aws-sdk": "^2.1600.0"
+    "aws-sdk": "^2.1600.0",
+    "stripe": "^14.0.0"
   }
 }

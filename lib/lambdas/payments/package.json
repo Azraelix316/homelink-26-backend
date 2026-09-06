@@ -1,0 +1,10 @@
+{
+  "name": "lambda-function",
+  "version": "1.0.0",
+  "description": "Lambda function",
+  "main": "index.js",
+  "dependencies": {
+    "aws-sdk": "^2.1600.0",
+    "stripe": "^14.0.0"
+  }
+}
