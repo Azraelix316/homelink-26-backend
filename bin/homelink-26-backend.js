@@ -8,7 +8,7 @@ new HomeLinkStack(app, 'HomeLinkBackendStack', {
   description: 'HomeLink Backend - AWS CDK Infrastructure with DynamoDB, Lambda, API Gateway, and Cognito',
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
+    region: process.env.HOMELINK_AWS_REGION || 'ap-southeast-2',
   },
   tags: {
     Project: 'HomeLink',

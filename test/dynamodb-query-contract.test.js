@@ -1,0 +1,49 @@
+const fs = require('fs');
+const path = require('path');
+
+function source(relativePath) {
+  return fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
+}
+
+describe('DynamoDB query contracts', () => {
+  test('availability queries the tradie/date index directly', () => {
+    const code = source('lib/lambdas/availability/index.js');
+    const direct = "KeyConditionExpression: 'tradieId = :tradieId AND bookingDate = :date'";
+    expect(code.split(direct)).toHaveLength(4);
+    expect(code).not.toContain("FilterExpression: 'bookingDate = :date AND");
+  });
+
+  test('booking conflict checks use the same tradie/date key', () => {
+    const code = source('lib/lambdas/bookings/index.js');
+    expect(code).toContain("KeyConditionExpression: 'tradieId = :tradieId AND bookingDate = :date'");
+    expect(code).not.toContain("FilterExpression: 'bookingDate = :date AND");
+  });
+
+  test('search ratings are calculated from reviews', () => {
+    const code = source('lib/lambdas/search/index.js');
+    expect(code).toContain('const REVIEWS_TABLE = process.env.REVIEWS_TABLE');
+    expect(code).toContain('const ratingMap = {}');
+    expect(code).not.toContain('rating: profile.rating || 0');
+  });
+
+  test('payments use accepted bookings, server pricing, and Secrets Manager', () => {
+    const code = source('lib/lambdas/payments/index.js');
+    expect(code).toContain("booking.status !== 'accepted'");
+    expect(code).not.toContain("booking.status !== 'confirmed'");
+    expect(code).toContain('amountForBooking(booking)');
+    expect(code).toContain('STRIPE_SECRET_NAME');
+  });
+
+  test('booking updates support explicit arrival status and ETA', () => {
+    const code = source('lib/lambdas/bookings/index.js');
+    expect(code).toContain("['en-route', 'arrived'].includes(arrivalStatus)");
+    expect(code).toContain("'arrival-update'");
+  });
+
+  test('the stack targets Sydney and exposes the payments table to Lambdas', () => {
+    const app = source('bin/homelink-26-backend.js');
+    expect(app).toContain("process.env.HOMELINK_AWS_REGION || 'ap-southeast-2'");
+    expect(app).not.toContain('CDK_DEFAULT_REGION');
+    expect(source('lib/stack.js')).toContain('PAYMENTS_TABLE: tables.paymentsTable.tableName');
+  });
+});
