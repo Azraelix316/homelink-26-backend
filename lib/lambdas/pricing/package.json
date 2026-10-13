@@ -1,9 +1,9 @@
-﻿{
-    "main":  "index.js",
-    "description":  "Lambda function",
-    "name":  "lambda-function",
-    "version":  "1.0.0",
-    "dependencies":  {
-                         "aws-sdk":  "^2.1600.0"
-                     }
+{
+  "name": "lambda-function",
+  "version": "1.0.0",
+  "description": "Lambda function",
+  "main": "index.js",
+  "dependencies": {
+    "aws-sdk": "^2.1600.0"
+  }
 }
