@@ -32,12 +32,22 @@ describe('DynamoDB query contracts', () => {
     expect(code).not.toContain("booking.status !== 'confirmed'");
     expect(code).toContain('amountForBooking(booking)');
     expect(code).toContain('STRIPE_SECRET_NAME');
+    expect(code).toContain('finalizePayment(paymentIntent, booking)');
+    expect(code).toContain('`stripe-${paymentIntent.id}`');
   });
 
   test('booking updates support explicit arrival status and ETA', () => {
     const code = source('lib/lambdas/bookings/index.js');
     expect(code).toContain("['en-route', 'arrived'].includes(arrivalStatus)");
     expect(code).toContain("'arrival-update'");
+  });
+
+  test('live locations are tradie-only, validated, and removed when tracking ends', () => {
+    const code = source('lib/lambdas/bookings/index.js');
+    expect(code).toContain("Only the tradie can share a live location");
+    expect(code).toContain('latitude < -90 || latitude > 90');
+    expect(code).toContain('longitude < -180 || longitude > 180');
+    expect(code).toContain('REMOVE liveLocation');
   });
 
   test('the stack targets Sydney and exposes the payments table to Lambdas', () => {
