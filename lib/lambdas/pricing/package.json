@@ -1,4 +1,4 @@
-﻿{
+{
     "main":  "index.js",
     "description":  "Lambda function",
     "name":  "lambda-function",
