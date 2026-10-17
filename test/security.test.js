@@ -174,6 +174,14 @@ describe('profiles and search', () => {
     expect(JSON.parse(res.body).tradies[0].email).toBeUndefined();
   });
 
+  test('search leaves out tradies who have not verified their email', async () => {
+    mockDb.scan.mockReturnValue(ok({ Items: [] }));
+
+    await search.searchTradies(publicEvent({ queryStringParameters: {} }));
+
+    expect(mockDb.scan.mock.calls[0][0].FilterExpression).toContain('emailVerified = :verified');
+  });
+
   test.each([[-50], [0], ['abc'], [5000]])('rejects hourly rate %p', async (hourlyRate) => {
     mockTables({ users: { userId: TRADIE, role: 'tradie' } });
 

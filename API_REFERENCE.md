@@ -19,10 +19,22 @@ Authorization: Bearer {idToken}
 
 ## Auth Endpoints
 
+### Registration and email verification
+
+New accounts must prove they own their email address before they can log in:
+
+1. `POST /auth/register` creates the account in an **unverified** state and Cognito emails a 6-digit code (valid for 24 hours).
+2. `POST /auth/confirm` with that code verifies the address and activates the account.
+3. `POST /auth/login` works from then on. Before that it returns **403** with `"code": "EMAIL_NOT_VERIFIED"`; send the user to the code screen and offer `POST /auth/resend-code`.
+
+Registering an address whose earlier registration was never confirmed replaces that pending registration (and its old code), so nobody can lock an email address they don't own. A confirmed account is never replaced (409).
+
+The `role` (`tradie` / `homeowner`) and `userId` are set by the backend at registration and cannot be changed by the client afterwards. Tradies don't appear in search until they've verified.
+
 ### Register User
 **POST** `/auth/register`
 
-Register a new homeowner or tradie account.
+Start registration for a homeowner or tradie account. Sends a verification code to `email`.
 
 **Request:**
 ```json
@@ -36,6 +48,8 @@ Register a new homeowner or tradie account.
 }
 ```
 
+Passwords need at least 8 characters, including a lowercase letter and a digit.
+
 **Response (201):**
 ```json
 {
@@ -43,9 +57,62 @@ Register a new homeowner or tradie account.
   "email": "john@example.com",
   "name": "John Smith",
   "role": "tradie",
-  "message": "User registered successfully"
+  "emailVerified": false,
+  "codeDeliveryDestination": "j***@e***",
+  "message": "Registration started. Enter the verification code sent to your email to activate your account."
 }
 ```
+
+**Errors:** 400 invalid input or password too weak · 409 email already registered and verified · 429 too many attempts
+
+---
+
+### Confirm Registration
+**POST** `/auth/confirm`
+
+Verify the email address with the code from the registration email.
+
+**Request:**
+```json
+{
+  "email": "john@example.com",
+  "code": "123456"
+}
+```
+
+**Response (200):**
+```json
+{
+  "email": "john@example.com",
+  "emailVerified": true,
+  "message": "Email verified. You can now log in."
+}
+```
+
+**Errors:** 400 wrong or expired code · 409 account already confirmed · 429 too many attempts
+
+---
+
+### Resend Verification Code
+**POST** `/auth/resend-code`
+
+Email a new code for a registration that hasn't been confirmed yet. Always returns the same response whether or not the address is registered.
+
+**Request:**
+```json
+{
+  "email": "john@example.com"
+}
+```
+
+**Response (200):**
+```json
+{
+  "message": "If that account is awaiting verification, a new code has been sent."
+}
+```
+
+**Errors:** 400 invalid email · 429 too many attempts
 
 ---
 
@@ -77,6 +144,32 @@ Authenticate and get access tokens.
   }
 }
 ```
+
+**Errors:** 401 wrong email or password · 403 email not verified:
+```json
+{
+  "error": "Email address not verified. Enter the code sent to your email, or request a new one.",
+  "code": "EMAIL_NOT_VERIFIED"
+}
+```
+
+### Verification email delivery
+
+By default Cognito sends the codes itself, which is limited to **50 emails per day** for the whole user pool. For production, send through Amazon SES by setting CDK context when deploying:
+
+```bash
+npx cdk deploy -c sesFromEmail=no-reply@homelink.com.au -c sesFromName=HomeLink
+```
+
+| Context key | Required | Meaning |
+|---|---|---|
+| `sesFromEmail` | yes (enables SES) | From address; must be a verified SES identity in ap-southeast-2 |
+| `sesFromName` | no | Display name, e.g. `HomeLink` |
+| `sesReplyTo` | no | Reply-to address |
+| `sesVerifiedDomain` | no | Verified SES domain, if `sesFromEmail` is verified through its domain rather than individually |
+| `sesConfigurationSet` | no | SES configuration set for delivery/bounce tracking |
+
+The SES account must be out of the SES sandbox to email unverified recipients. Context keys can also go in `cdk.json` under `"context"`.
 
 ---
 
