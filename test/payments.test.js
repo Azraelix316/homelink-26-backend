@@ -343,7 +343,7 @@ describe('HomeLink Pro', () => {
     return payments.handleWebhook({ headers: { 'Stripe-Signature': 'sig' }, body: '{}' });
   };
 
-  test('subscribe creates a customer and a US$200/month checkout session', async () => {
+  test('subscribe creates a customer and an A$149/month checkout session by default', async () => {
     mockTables({ users: tradie({ email: 't@example.com' }) });
     mockStripe.customers.create.mockResolvedValue({ id: 'cus_new' });
     mockStripe.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.com/x', expires_at: 1 });
@@ -356,11 +356,43 @@ describe('HomeLink Pro', () => {
     expect(params).toMatchObject({
       mode: 'subscription',
       customer: 'cus_new',
-      subscription_data: { metadata: { userId: TRADIE } },
+      subscription_data: { metadata: { userId: TRADIE, billingCycle: 'monthly' } },
     });
     expect(params.line_items[0].price_data).toMatchObject({
-      currency: 'usd', unit_amount: 20000, recurring: { interval: 'month' },
+      currency: 'aud', unit_amount: 14900, recurring: { interval: 'month' },
     });
+  });
+
+  test('the annual plan is A$1,490 a year', async () => {
+    mockTables({ users: tradie({ stripeCustomerId: 'cus_1' }) });
+    mockStripe.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.com/y' });
+
+    const res = await payments.subscribePro(apiEvent(TRADIE, { body: { billingCycle: 'annual' } }));
+
+    expect(bodyOf(res).billingCycle).toBe('annual');
+    expect(mockStripe.checkout.sessions.create.mock.calls[0][0].line_items[0].price_data).toMatchObject({
+      currency: 'aud', unit_amount: 149000, recurring: { interval: 'year' },
+    });
+  });
+
+  test('a configured Stripe Price ID is used instead of the inline price', async () => {
+    process.env.PRO_ANNUAL_PRICE_ID = 'price_annual';
+    mockTables({ users: tradie({ stripeCustomerId: 'cus_1' }) });
+    mockStripe.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.com/z' });
+
+    await payments.subscribePro(apiEvent(TRADIE, { body: { billingCycle: 'annual' } }));
+    delete process.env.PRO_ANNUAL_PRICE_ID;
+
+    expect(mockStripe.checkout.sessions.create.mock.calls[0][0].line_items).toEqual([{ price: 'price_annual', quantity: 1 }]);
+  });
+
+  test('rejects an unknown billing cycle', async () => {
+    mockTables({ users: tradie() });
+
+    const res = await payments.subscribePro(apiEvent(TRADIE, { body: { billingCycle: 'weekly' } }));
+
+    expect(res.statusCode).toBe(400);
+    expect(mockStripe.checkout.sessions.create).not.toHaveBeenCalled();
   });
 
   test('homeowners cannot subscribe', async () => {
@@ -390,6 +422,14 @@ describe('HomeLink Pro', () => {
     expect(params.ConditionExpression).toContain('proEventAt <= :at');
   });
 
+  test('the webhook records which billing cycle the tradie is on', async () => {
+    await subscriptionEvent('customer.subscription.updated', subscription({
+      items: { data: [{ price: { recurring: { interval: 'year' } } }] },
+    }));
+
+    expect(mockDb.update.mock.calls[0][0].ExpressionAttributeValues[':cycle']).toBe('annual');
+  });
+
   test('a cancelled or unpaid subscription turns Pro off', async () => {
     await subscriptionEvent('customer.subscription.deleted', subscription({ status: 'canceled' }));
     await subscriptionEvent('customer.subscription.updated', subscription({ status: 'past_due' }));
@@ -406,10 +446,12 @@ describe('HomeLink Pro', () => {
   });
 
   test('status reports the stored membership', async () => {
-    mockTables({ users: tradie({ hasHomeinkPro: true, proStatus: 'active', proCurrentPeriodEnd: 1800000000 }) });
+    mockTables({ users: tradie({ hasHomeinkPro: true, proStatus: 'active', proBillingCycle: 'annual', proCurrentPeriodEnd: 1800000000 }) });
 
     const res = await payments.proStatus(apiEvent(TRADIE));
 
-    expect(bodyOf(res)).toEqual({ hasPro: true, status: 'active', currentPeriodEnd: 1800000000, cancelAtPeriodEnd: false });
+    expect(bodyOf(res)).toEqual({
+      hasPro: true, status: 'active', billingCycle: 'annual', currentPeriodEnd: 1800000000, cancelAtPeriodEnd: false,
+    });
   });
 });
