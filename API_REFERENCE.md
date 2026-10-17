@@ -486,27 +486,56 @@ Get specific booking information.
 
 ---
 
-### Update Booking Status 🔒
+### Update Booking 🔒
 **PATCH** `/bookings/{bookingId}`
 
-Update booking status (tradie/homeowner).
+Each request does one of three things: change the status, send a live arrival update, or reschedule. Mixing them in one request returns 400. The response is the updated booking.
 
-**Request:**
+#### Status change
 ```json
 {
   "status": "accepted",
   "notes": "I can do this on that date"
 }
 ```
+Only the tradie can accept, decline or complete; only the homeowner can cancel (not once paid). Completing, cancelling or declining also stops location sharing and removes the live location.
 
-**Response (200):**
+#### Live arrival tracking (tradie, accepted bookings only)
 ```json
 {
-  "bookingId": "...",
-  "status": "accepted",
-  "updatedAt": 1691001000
+  "arrivalStatus": "en-route",
+  "etaMinutes": 25,
+  "liveLocation": { "latitude": -33.8688, "longitude": 151.2093, "accuracy": 15 }
 }
 ```
+All fields are optional, but at least one arrival field must be sent.
+
+| Field | Rules |
+|---|---|
+| `arrivalStatus` | `en-route` (also accepts `on_the_way`, stored as `en-route`) or `arrived`. Arriving removes `etaMinutes` |
+| `etaMinutes` | Number 0–1440; only while en route |
+| `liveLocation` | `latitude` −90…90, `longitude` −180…180, optional `accuracy` in metres (0–100000). Other fields are dropped |
+| `stopLocationSharing` | `true` stops sharing and removes the location. Allowed at any status, so the app can always withdraw it. Can't be combined with `liveLocation` |
+
+Stored on the booking: `arrivalStatus`, `arrivalUpdatedAt`, `etaMinutes`, `locationSharing`, `liveLocation`, `locationUpdatedAt` (ISO 8601). Only the booking's homeowner and tradie can read them (`GET /bookings/{bookingId}`, `GET /bookings`). The homeowner gets a notification when the tradie sets off (`tradie-en-route`) and arrives (`tradie-arrived`), not on every ETA or location update.
+
+Errors: 403 if the caller isn't the booking's tradie, 409 if the booking isn't accepted (or changed during the update), 400 for invalid values.
+
+#### Reschedule (homeowner or tradie, pending or accepted bookings)
+```json
+{
+  "date": "2024-08-22",
+  "startTime": "13:00",
+  "endTime": "15:00"
+}
+```
+Any field left out keeps its current value. The same rules as creating a booking apply: valid date and times, start before end, not in the past, and the slot must be free in the tradie's working hours, days off and travel buffer (the booking itself is ignored). The other party gets a `booking-rescheduled` notification. The status doesn't change.
+
+A paid booking can be rescheduled only if the new time costs exactly what was paid (the charge is the tradie's hourly rate times the duration). Otherwise it returns 409; keep the same duration, or refund and rebook.
+
+Stored: `previousSchedule` (`{ date, startTime, endTime }`), `rescheduledAt`, `rescheduledBy`. Arrival details and the live location are cleared.
+
+Errors: 409 if the slot isn't available, the booking isn't pending or accepted, the paid price would change, or the booking changed during the update.
 
 ---
 
@@ -698,6 +727,42 @@ Calculate pricing breakdown.
   "hasPro": false
 }
 ```
+
+---
+
+### Price Estimate
+**POST** `/pricing/estimate` (public)
+
+Price guide for a job, from what tradies in the trade charge.
+
+**Request:**
+```json
+{
+  "trade": "Plumbing",
+  "location": "Parramatta",
+  "description": "Replace a leaking kitchen tap",
+  "durationHours": 2
+}
+```
+`trade` is required (at most 100 characters); `durationHours` is a number from 0.5 to 24. `location` (at most 100 characters) and `description` (at most 2000) are optional.
+
+**Response (200):**
+```json
+{
+  "currency": "AUD",
+  "low": 150,
+  "high": 420,
+  "hours": { "low": 1.5, "high": 3 },
+  "sampleSize": 5,
+  "source": "marketplace",
+  "includesServiceFee": false,
+  "disclaimer": "Guide only. The tradie confirms the final scope and price before work starts."
+}
+```
+- Rates come from verified tradies in the trade (Users table `TradeRateIndex`), ignoring rates outside $30–$400/h. If 3 or more are in `location`, only those are used.
+- `low` is the 25th percentile rate over 75% of the hours; `high` is the 75th percentile rate over 150% of the hours, both rounded to $5. With one rate, ±15% of it is used.
+- With no data, `source` is `baseline` and a typical Sydney rate for the trade is used.
+- HomeLink's service fee and card fee are not included.
 
 ---
 
@@ -992,9 +1057,17 @@ API Gateway default limits apply:
 
 ## CORS
 
-API has CORS enabled for all origins:
+Allowed origins come from the CDK context: `allowedOrigins` (comma-separated or a list) plus `frontendUrl`. With neither set, any origin is allowed (`*`).
+
+```bash
+npx cdk deploy \
+  --context frontendUrl=https://app.homelink.com.au \
+  --context allowedOrigins=capacitor://localhost,https://localhost,https://staging.xxxx.amplifyapp.com
 ```
-Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS
-Access-Control-Allow-Headers: *
+
+`capacitor://localhost` (iOS) and `https://localhost` (Android) are the Capacitor app origins. Preflight (`OPTIONS`) and Lambda responses return the caller's `Origin` in `Access-Control-Allow-Origin` when it's allowed, with `Vary: Origin`; other origins get no `Access-Control-Allow-Origin`.
+
+```
+Access-Control-Allow-Methods: OPTIONS, GET, PUT, POST, DELETE, PATCH, HEAD
+Access-Control-Allow-Headers: Content-Type, Authorization
 ```

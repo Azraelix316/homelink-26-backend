@@ -43,7 +43,7 @@ aws secretsmanager create-secret --region ap-southeast-2 --name homelink/stripe 
 |---|---|---|
 | `stripeSecretName` | `homelink/stripe` | Secrets Manager secret holding the keys |
 | `stripeCurrency` | `aud` | Currency for all charges |
-| `frontendUrl` | `http://localhost:3000` | Base URL for Connect and Pro return links; also the only allowed CORS origin |
+| `frontendUrl` | `http://localhost:3000` | Base URL for Connect and Pro return links; also an allowed CORS origin (add more with `allowedOrigins`, see API_REFERENCE.md) |
 | `stripeFeePercent` | `0.0165` | Card fee percentage passed on to homeowners |
 | `stripeFeeFixed` | `0.30` | Fixed card fee (in `stripeCurrency`) passed on to homeowners |
 | `proMonthlyPriceId` | none | Stripe Price ID for monthly Pro. If unset, an inline price is used |
@@ -312,5 +312,6 @@ stripe trigger payment_intent.succeeded
 ## Production Considerations
 1. Use live keys (`sk_live_...`) in a separate secret for production.
 2. The price is calculated from the tradie's current `hourlyRate` when payment starts. If you need the price fixed when the booking is accepted, store it on the booking at that point.
-3. Refunds and disputes are not handled yet. Destination-charge refunds need `reverse_transfer` and `refund_application_fee` decisions.
-4. Monitor failed payments and webhook errors in CloudWatch.
+3. A paid booking can be rescheduled (`PATCH /bookings/{bookingId}`) only if the new time costs exactly `paymentAmount` at the tradie's current rate, so a reschedule never changes what was charged. A booking with an unpaid PaymentIntent can be rescheduled freely; the intent is re-priced the next time the homeowner opens checkout.
+4. Refunds and disputes are not handled yet. Destination-charge refunds need `reverse_transfer` and `refund_application_fee` decisions.
+5. Monitor failed payments and webhook errors in CloudWatch.
