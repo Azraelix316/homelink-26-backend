@@ -12,6 +12,9 @@ const mockStripe = {
   paymentIntents: { create: jest.fn(), retrieve: jest.fn(), cancel: jest.fn() },
   accounts: { create: jest.fn(), retrieve: jest.fn() },
   accountLinks: { create: jest.fn() },
+  customers: { create: jest.fn() },
+  checkout: { sessions: { create: jest.fn() } },
+  billingPortal: { sessions: { create: jest.fn() } },
   webhooks: { constructEvent: jest.fn() },
 };
 
@@ -78,7 +81,7 @@ describe('createPaymentIntent', () => {
   test('charges the server-side price, ignoring any client amount', async () => {
     mockTables({ bookings: booking(), users: tradie() });
     mockStripe.paymentIntents.create.mockResolvedValue({
-      id: 'pi_1', client_secret: 'secret', amount: 21000, currency: 'aud', status: 'requires_payment_method',
+      id: 'pi_1', client_secret: 'secret', amount: 21383, currency: 'aud', status: 'requires_payment_method',
     });
 
     const res = await payments.createPaymentIntent(
@@ -86,12 +89,13 @@ describe('createPaymentIntent', () => {
     );
 
     expect(res.statusCode).toBe(200);
-    // 2h x $100 = $200 + 5% homeowner fee = $210; fee = $10 + 10% commission ($20)
+    // 2h x $100 = $200 + 5% fee ($10), grossed up for 1.65% + $0.30 card fee = $213.83
+    // HomeLink collects $213.83 - $180 tradie share = $33.83
     expect(mockStripe.paymentIntents.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        amount: 21000,
+        amount: 21383,
         currency: 'aud',
-        application_fee_amount: 3000,
+        application_fee_amount: 3383,
         transfer_data: { destination: 'acct_123' },
       }),
       expect.objectContaining({ idempotencyKey: expect.stringContaining('booking-b1') })
@@ -104,7 +108,8 @@ describe('createPaymentIntent', () => {
 
     await payments.createPaymentIntent(apiEvent(HOMEOWNER, { body: { bookingId: 'b1' } }));
 
-    expect(mockStripe.paymentIntents.create.mock.calls[0][0].application_fee_amount).toBe(1000);
+    // No commission: HomeLink collects only the $10 service fee + $3.83 card markup
+    expect(mockStripe.paymentIntents.create.mock.calls[0][0].application_fee_amount).toBe(1383);
   });
 
   test('rejects bookings the tradie has not accepted', async () => {
@@ -127,7 +132,7 @@ describe('createPaymentIntent', () => {
   test('reuses an unchanged, still-payable intent instead of creating another', async () => {
     mockTables({ bookings: booking({ stripePaymentIntentId: 'pi_old' }), users: tradie() });
     mockStripe.paymentIntents.retrieve.mockResolvedValue({
-      id: 'pi_old', client_secret: 'secret', amount: 21000, application_fee_amount: 3000,
+      id: 'pi_old', client_secret: 'secret', amount: 21383, application_fee_amount: 3383,
       transfer_data: { destination: 'acct_123' }, currency: 'aud', status: 'requires_payment_method',
     });
 
@@ -140,7 +145,7 @@ describe('createPaymentIntent', () => {
   test('cancels a stale intent when the price has changed', async () => {
     mockTables({ bookings: booking({ stripePaymentIntentId: 'pi_old' }), users: tradie({ hourlyRate: 120 }) });
     mockStripe.paymentIntents.retrieve.mockResolvedValue({
-      id: 'pi_old', amount: 21000, application_fee_amount: 3000,
+      id: 'pi_old', amount: 21383, application_fee_amount: 3383,
       transfer_data: { destination: 'acct_123' }, status: 'requires_payment_method',
     });
     mockStripe.paymentIntents.create.mockResolvedValue({ id: 'pi_new', amount: 25200, currency: 'aud' });
@@ -325,5 +330,86 @@ describe('connectOnboard', () => {
     const res = await payments.connectOnboard(apiEvent(HOMEOWNER));
 
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('HomeLink Pro', () => {
+  const subscription = (overrides = {}) => ({
+    id: 'sub_1', customer: 'cus_1', status: 'active', cancel_at_period_end: false,
+    current_period_end: 1800000000, metadata: { userId: TRADIE }, ...overrides,
+  });
+  const subscriptionEvent = (type, sub, created = 100) => {
+    mockStripe.webhooks.constructEvent.mockReturnValue({ type, created, data: { object: sub } });
+    return payments.handleWebhook({ headers: { 'Stripe-Signature': 'sig' }, body: '{}' });
+  };
+
+  test('subscribe creates a customer and a US$200/month checkout session', async () => {
+    mockTables({ users: tradie({ email: 't@example.com' }) });
+    mockStripe.customers.create.mockResolvedValue({ id: 'cus_new' });
+    mockStripe.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.com/x', expires_at: 1 });
+
+    const res = await payments.subscribePro(apiEvent(TRADIE));
+
+    expect(res.statusCode).toBe(200);
+    expect(bodyOf(res).checkoutUrl).toBe('https://checkout.stripe.com/x');
+    const params = mockStripe.checkout.sessions.create.mock.calls[0][0];
+    expect(params).toMatchObject({
+      mode: 'subscription',
+      customer: 'cus_new',
+      subscription_data: { metadata: { userId: TRADIE } },
+    });
+    expect(params.line_items[0].price_data).toMatchObject({
+      currency: 'usd', unit_amount: 20000, recurring: { interval: 'month' },
+    });
+  });
+
+  test('homeowners cannot subscribe', async () => {
+    mockTables({ users: { userId: HOMEOWNER, role: 'homeowner' } });
+
+    const res = await payments.subscribePro(apiEvent(HOMEOWNER));
+
+    expect(res.statusCode).toBe(403);
+    expect(mockStripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  test('existing Pro members are not charged twice', async () => {
+    mockTables({ users: tradie({ hasHomeinkPro: true }) });
+
+    const res = await payments.subscribePro(apiEvent(TRADIE));
+
+    expect(res.statusCode).toBe(409);
+  });
+
+  test('an active subscription turns Pro on for the matching customer only', async () => {
+    await subscriptionEvent('customer.subscription.created', subscription(), 100);
+
+    const params = mockDb.update.mock.calls[0][0];
+    expect(params).toMatchObject({ TableName: 'users', Key: { userId: TRADIE } });
+    expect(params.ExpressionAttributeValues).toMatchObject({ ':pro': true, ':cid': 'cus_1', ':at': 100 });
+    expect(params.ConditionExpression).toContain('stripeCustomerId = :cid');
+    expect(params.ConditionExpression).toContain('proEventAt <= :at');
+  });
+
+  test('a cancelled or unpaid subscription turns Pro off', async () => {
+    await subscriptionEvent('customer.subscription.deleted', subscription({ status: 'canceled' }));
+    await subscriptionEvent('customer.subscription.updated', subscription({ status: 'past_due' }));
+
+    expect(mockDb.update.mock.calls.map(([p]) => p.ExpressionAttributeValues[':pro'])).toEqual([false, false]);
+  });
+
+  test('stale or mismatched subscription events are ignored', async () => {
+    mockDb.update.mockReturnValue(fail(conditionalCheckFailed()));
+
+    const res = await subscriptionEvent('customer.subscription.updated', subscription());
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  test('status reports the stored membership', async () => {
+    mockTables({ users: tradie({ hasHomeinkPro: true, proStatus: 'active', proCurrentPeriodEnd: 1800000000 }) });
+
+    const res = await payments.proStatus(apiEvent(TRADIE));
+
+    expect(bodyOf(res)).toEqual({ hasPro: true, status: 'active', currentPeriodEnd: 1800000000, cancelAtPeriodEnd: false });
   });
 });

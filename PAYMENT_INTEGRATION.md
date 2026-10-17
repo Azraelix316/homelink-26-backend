@@ -1,7 +1,20 @@
 # Stripe Payment Integration for HomeLink
 
 ## Overview
-Homeowners pay for accepted bookings with Stripe. Payments use **Stripe Connect destination charges**: the homeowner is charged the full price, the tradie's Connect account receives it, and HomeLink keeps an application fee (the 5% homeowner service fee plus the 10% tradie commission, or 0% commission for HomeLink Pro tradies).
+Homeowners pay for accepted bookings with Stripe. Payments use **Stripe Connect destination charges**: the homeowner is charged the full price, the tradie's Connect account receives their share, and Stripe automatically routes HomeLink's cut to the platform as an application fee.
+
+| On a A$225 job (2.5 h × A$90) | Standard tradie | HomeLink Pro tradie |
+| --- | --- | --- |
+| Homeowner service fee (5%) | 11.25 | 11.25 |
+| Card processing markup | 4.27 | 4.27 |
+| **Homeowner pays** | **240.52** | **240.52** |
+| Tradie commission (10%) | 22.50 | 0.00 |
+| **Tradie receives** | **202.50** | **225.00** |
+| HomeLink application fee | 38.02 | 15.52 |
+| Stripe card fee (1.65% + A$0.30, paid from the application fee) | −4.27 | −4.27 |
+| **HomeLink keeps** | **33.75** | **11.25** |
+
+The card processing markup grosses the price up so Stripe's card fee is covered by the homeowner: `homeownerPays = (subtotal + serviceFee + A$0.30) / (1 − 1.65%)`, rounded up to the cent. The rates are set with the `stripeFeePercent` and `stripeFeeFixed` CDK context keys. International cards (3.5% + A$0.30) still cost more than the markup covers. Connect payout fees are not marked up.
 
 The amount is always calculated by the backend from the tradie's `hourlyRate` and the booking duration. Clients never send an amount.
 
@@ -30,7 +43,12 @@ aws secretsmanager create-secret --region ap-southeast-2 --name homelink/stripe 
 |---|---|---|
 | `stripeSecretName` | `homelink/stripe` | Secrets Manager secret holding the keys |
 | `stripeCurrency` | `aud` | Currency for all charges |
-| `frontendUrl` | `http://localhost:3000` | Base URL for Connect onboarding return/refresh links |
+| `frontendUrl` | `http://localhost:3000` | Base URL for Connect and Pro return links; also the only allowed CORS origin |
+| `stripeFeePercent` | `0.0165` | Card fee percentage passed on to homeowners |
+| `stripeFeeFixed` | `0.30` | Fixed card fee (in `stripeCurrency`) passed on to homeowners |
+| `proPriceId` | none | Stripe Price ID for HomeLink Pro. If unset, an inline price is used |
+| `proCurrency` | `usd` | Currency of the inline Pro price |
+| `proPriceCents` | `20000` | Inline Pro price per month, in cents (US$200) |
 
 ```bash
 CDK_DEFAULT_REGION=ap-southeast-2 npx cdk deploy --context frontendUrl=https://app.homelink.com.au
@@ -42,9 +60,13 @@ CDK_DEFAULT_REGION=ap-southeast-2 npx cdk deploy --context frontendUrl=https://a
    - `payment_intent.succeeded`
    - `payment_intent.payment_failed`
    - `payment_intent.canceled`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
 3. Add a webhook endpoint at the same URL for **events on connected accounts**:
    - `account.updated`
 4. Put both signing secrets in the Secrets Manager secret.
+5. Configure the **Customer portal** (Settings → Billing → Customer portal) so Pro tradies can update their card and cancel.
 
 ## Payment Flow
 
@@ -74,7 +96,7 @@ Both step 5 paths are idempotent, so it's safe for both to run. The webhook is t
 {
   "clientSecret": "pi_xxx_secret_yyy",
   "paymentIntentId": "pi_xxx",
-  "amount": 210.00,
+  "amount": 213.83,
   "currency": "aud",
   "status": "requires_payment_method"
 }
@@ -101,7 +123,7 @@ Calling it again for the same booking returns the same PaymentIntent while it's 
   "paymentId": "uuid",
   "bookingId": "uuid",
   "status": "completed",
-  "amount": 210.00,
+  "amount": 213.83,
   "currency": "AUD",
   "message": "Payment confirmed successfully"
 }
@@ -122,8 +144,8 @@ Calling it again for the same booking returns the same PaymentIntent while it's 
   "homeownerId": "uuid",
   "tradieId": "uuid",
   "stripePaymentIntentId": "pi_xxx",
-  "amount": 210.00,
-  "applicationFee": 30.00,
+  "amount": 213.83,
+  "applicationFee": 33.83,
   "currency": "AUD",
   "status": "completed",
   "createdAt": 1234567890,
@@ -174,8 +196,39 @@ This also refreshes the stored status, in case the `account.updated` webhook has
 | `payment_intent.payment_failed` | `paymentStatus = payment_failed` (ignored if already paid or for a replaced intent) |
 | `payment_intent.canceled` | `paymentStatus = payment_cancelled` (same rules) |
 | `account.updated` | Updates the tradie's `stripeChargesEnabled` / `stripePayoutsEnabled` |
+| `customer.subscription.*` | Turns HomeLink Pro on (`active`, `trialing`) or off (anything else); older events never overwrite newer ones |
 
 Processing errors return `500` so Stripe retries the event.
+
+## HomeLink Pro (tradies)
+HomeLink Pro is a monthly subscription (US$200 by default) that removes the 10% tradie commission. Homeowners still pay the 5% service fee and card markup. The subscription is billed through Stripe Billing on the platform account, separate from the tradie's Connect payout account.
+
+### Subscribe
+**POST** `/payments/pro/subscribe` (Cognito auth, tradie)
+
+Returns a Stripe Checkout URL. After payment, Stripe redirects to `{frontendUrl}/pro?status=success` (or `?status=cancelled`), and the `customer.subscription.created` webhook turns Pro on.
+
+```json
+{ "checkoutUrl": "https://checkout.stripe.com/...", "expiresAt": 1234567890 }
+```
+
+`409` if the tradie already has Pro.
+
+### Manage or cancel
+**POST** `/payments/pro/portal` (Cognito auth, tradie)
+
+```json
+{ "portalUrl": "https://billing.stripe.com/..." }
+```
+
+### Status
+**GET** `/payments/pro/status` (Cognito auth, tradie)
+
+```json
+{ "hasPro": true, "status": "active", "currentPeriodEnd": 1234567890, "cancelAtPeriodEnd": false }
+```
+
+Pro takes effect on payments started after it turns on. An unpaid PaymentIntent created before is replaced with the new price the next time the homeowner opens checkout. If a renewal payment fails (`past_due`), Pro switches off until it's paid.
 
 ## Stored Fields
 
@@ -194,6 +247,12 @@ Processing errors return `500` so Stripe retries the event.
 | `stripeAccountId` | String | Stripe Connect Express account |
 | `stripeChargesEnabled` | Boolean | Can accept payments; required before homeowners can pay |
 | `stripePayoutsEnabled` | Boolean | Can receive payouts |
+| `stripeCustomerId` | String | Stripe Customer billed for HomeLink Pro |
+| `hasHomeinkPro` | Boolean | Pro is active; set only by the subscription webhook |
+| `proStatus` | String | Stripe subscription status |
+| `proSubscriptionId` | String | Stripe subscription ID |
+| `proCurrentPeriodEnd` | Number | Unix timestamp the current billing period ends |
+| `proCancelAtPeriodEnd` | Boolean | Pro ends at the end of the current period |
 
 ## Frontend Integration
 
