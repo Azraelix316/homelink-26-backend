@@ -272,8 +272,8 @@ describe('payout status', () => {
     expect(mockStripe.accounts.create).not.toHaveBeenCalled();
     expect(mockStripe.accountLinks.create).toHaveBeenCalledWith(expect.objectContaining({
       account: 'acct_1',
-      return_url: 'https://app.example.com/payouts/setup?complete=true',
-      refresh_url: 'https://app.example.com/payouts/setup?refresh=true',
+      return_url: 'https://app.example.com/#/payouts/setup?complete=true',
+      refresh_url: 'https://app.example.com/#/payouts/setup?refresh=true',
     }));
     expect(bodyOf(res).onboardingUrl).toBe('https://connect.stripe.com/again');
   });
@@ -300,7 +300,7 @@ describe('Pro billing', () => {
 
     expect(bodyOf(res)).toEqual({ portalUrl: 'https://billing.stripe.com/p' });
     expect(mockStripe.billingPortal.sessions.create).toHaveBeenCalledWith({
-      customer: 'cus_1', return_url: 'https://app.example.com/pro',
+      customer: 'cus_1', return_url: 'https://app.example.com/#/pro',
     });
   });
 
@@ -327,6 +327,18 @@ describe('Pro billing', () => {
 
     expect(mockStripe.customers.create).not.toHaveBeenCalled();
     expect(mockStripe.checkout.sessions.create.mock.calls[0][0].customer).toBe('cus_1');
+  });
+
+  test('Stripe returns the tradie to the hash-routed Pro page', async () => {
+    mockTables({ users: tradie({ stripeCustomerId: 'cus_1' }) });
+    mockStripe.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.com/x' });
+
+    await payments.subscribePro(apiEvent(TRADIE));
+
+    expect(mockStripe.checkout.sessions.create.mock.calls[0][0]).toMatchObject({
+      success_url: 'https://app.example.com/#/pro?status=success',
+      cancel_url: 'https://app.example.com/#/pro?status=cancelled',
+    });
   });
 
   test('unauthenticated calls are refused', async () => {

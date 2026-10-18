@@ -174,7 +174,7 @@ Creates the tradie's Stripe Express account on first call and returns a one-time
 }
 ```
 
-Stripe redirects back to `{frontendUrl}/payouts/setup?complete=true` (or `?refresh=true` if the link expired).
+Stripe redirects back to `{frontendUrl}/#/payouts/setup?complete=true` (or `?refresh=true` if the link expired). The frontend uses hash routing, so return links carry the route after `#`.
 
 ### 6. Payout Status (tradies)
 **GET** `/payments/connect/status` (Cognito auth, tradie)
@@ -213,7 +213,7 @@ HomeLink Pro is a subscription (A$149 a month or A$1,490 a year by default) that
 { "billingCycle": "annual" }
 ```
 
-`billingCycle` is `monthly` (default) or `annual`. Returns a Stripe Checkout URL. After payment, Stripe redirects to `{frontendUrl}/pro?status=success` (or `?status=cancelled`), and the `customer.subscription.created` webhook turns Pro on.
+`billingCycle` is `monthly` (default) or `annual`. Returns a Stripe Checkout URL. After payment, Stripe redirects to `{frontendUrl}/#/pro?status=success` (or `?status=cancelled`), and the `customer.subscription.created` webhook turns Pro on.
 
 ```json
 { "checkoutUrl": "https://checkout.stripe.com/...", "expiresAt": 1234567890, "billingCycle": "annual" }
