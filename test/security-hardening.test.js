@@ -32,7 +32,7 @@ describe('IAM', () => {
       .map(([id]) => id);
     expect(readers.length).toBeGreaterThan(0);
     for (const id of readers) {
-      expect(id).toMatch(/Payment|Connect|ProSubscribe|ProPortal|Webhook/);
+      expect(id).toMatch(/Payment|Connect|ProSubscribe|ProPortal|Webhook|CancelPaidBooking/);
     }
   });
 

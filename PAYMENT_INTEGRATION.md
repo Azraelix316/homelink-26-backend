@@ -203,6 +203,55 @@ This also refreshes the stored status, in case the `account.updated` webhook has
 
 Processing errors return `500` so Stripe retries the event.
 
+## Cancelling a paid booking (refunds)
+
+**Off by default.** Turn it on with `--context refundsEnabled=true` once the policy below is agreed. While it's off, both endpoints return 403 with `code: "REFUNDS_DISABLED"`, and a paid booking can't be cancelled through `PATCH /bookings/{id}` (409).
+
+A paid booking that is `accepted` and hasn't started can be cancelled by either side:
+
+- **Tradie cancels:** the homeowner gets everything back. HomeLink covers Stripe's card fee, which Stripe doesn't return on refunds.
+- **Homeowner cancels at least `refundCutoffHours` before the job:** the job price comes back, plus the service fee and card markup unless HomeLink keeps them.
+- **Homeowner cancels later:** `refundLatePercent` of the job price comes back, and the tradie keeps the rest of their earnings.
+
+| CDK context | Default (placeholder) | Meaning |
+| --- | --- | --- |
+| `refundsEnabled` | `false` | Turn online cancellation with refund on |
+| `refundCutoffHours` | `24` | Hours before the job a homeowner can cancel for a full job-price refund |
+| `refundLatePercent` | `50` | Share of the job price refunded after the cut-off (0-100) |
+| `refundKeepServiceFee` | `true` | Keep the 5% service fee when a homeowner cancels |
+| `refundKeepProcessingFee` | `true` | Keep the card-fee markup when a homeowner cancels |
+| `businessTimezone` | `Australia/Sydney` | Time zone booking times are in (for the cut-off) |
+
+On an A$225 job (homeowner paid A$240.52, tradie earns A$202.50) with the placeholder values:
+
+| Who cancels, when | Homeowner refunded | Taken back from tradie |
+| --- | --- | --- |
+| Tradie, any time before the job | A$240.52 | A$202.50 |
+| Homeowner, before the cut-off | A$225.00 | A$202.50 |
+| Homeowner, after the cut-off (50%) | A$112.50 | A$101.25 |
+
+The amounts are set exactly rather than with Stripe's proportional split. The card refund is a `refund` on the PaymentIntent (`reverse_transfer: false`, `refund_application_fee: false`), and the tradie's share is a separate transfer reversal. Both use idempotency keys. The booking is locked (`refundStatus: processing`) before any Stripe call, so two cancellations can't both refund. If Stripe fails, the booking is unlocked for a retry and nothing is marked cancelled. The price breakdown is saved on the booking when payment starts (`paymentBreakdown`), so refunds use what was actually charged.
+
+### Quote
+**GET** `/payments/refund-quote/{bookingId}` (Cognito auth, homeowner or tradie on the booking)
+
+```json
+{ "bookingId": "b1", "cancelledBy": "homeowner", "rule": "before-cutoff", "refund": 225, "paid": 240.52, "tradieGivesBack": 202.5, "currency": "AUD", "cutoffHours": 24 }
+```
+
+### Cancel
+**POST** `/payments/cancel-booking` (Cognito auth, homeowner or tradie on the booking)
+
+```json
+{ "bookingId": "b1", "reason": "Plans changed" }
+```
+
+Returns the quote plus `status: "cancelled"`, `paymentStatus` (`refunded`, `partially_refunded`, or `paid` when nothing was refunded) and `refundId`. The other party gets a notification.
+
+Errors: `403` refunds off or not your booking. `409` when the booking is not paid and accepted, the job has started, a refund is already under way, it was paid before breakdowns were saved, or it changed meanwhile. `502` when Stripe fails (safe to retry).
+
+Not covered: completed jobs, disputes, and refunds started in the Stripe dashboard. Those don't update the booking yet; a `charge.refunded` webhook handler would.
+
 ## HomeLink Pro (tradies)
 HomeLink Pro is a subscription (A$149 a month or A$1,490 a year by default) that removes the 10% tradie commission. Homeowners still pay the 5% service fee and card markup. The subscription is billed through Stripe Billing on the platform account, separate from the tradie's Connect payout account.
 
@@ -313,5 +362,5 @@ stripe trigger payment_intent.succeeded
 1. Use live keys (`sk_live_...`) in a separate secret for production.
 2. The price is calculated from the tradie's current `hourlyRate` when payment starts. If you need the price fixed when the booking is accepted, store it on the booking at that point.
 3. A paid booking can be rescheduled (`PATCH /bookings/{bookingId}`) only if the new time costs exactly `paymentAmount` at the tradie's current rate, so a reschedule never changes what was charged. A booking with an unpaid PaymentIntent can be rescheduled freely; the intent is re-priced the next time the homeowner opens checkout.
-4. Refunds and disputes are not handled yet. Destination-charge refunds need `reverse_transfer` and `refund_application_fee` decisions.
+4. Online cancellation with refund exists behind `refundsEnabled` (see above); the policy values are placeholders to decide before turning it on. Disputes are still handled in the Stripe dashboard.
 5. Monitor failed payments and webhook errors in CloudWatch.
