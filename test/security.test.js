@@ -2,7 +2,7 @@
 
 const ok = value => ({ promise: () => Promise.resolve(value) });
 
-const mockDb = { get: jest.fn(), put: jest.fn(), update: jest.fn(), query: jest.fn(), delete: jest.fn(), scan: jest.fn() };
+const mockDb = { get: jest.fn(), put: jest.fn(), update: jest.fn(), query: jest.fn(), delete: jest.fn(), scan: jest.fn(), batchGet: jest.fn() };
 
 jest.mock('aws-sdk', () => ({
   DynamoDB: { DocumentClient: jest.fn(() => mockDb) },
@@ -49,6 +49,7 @@ function mockTables(tables) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockDb.put.mockReturnValue(ok({}));
+  mockDb.batchGet.mockReturnValue(ok({ Responses: {} }));
   mockDb.update.mockReturnValue(ok({}));
   mockDb.query.mockReturnValue(ok({ Items: [] }));
 });
