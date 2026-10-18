@@ -90,6 +90,43 @@ describe('login', () => {
   });
 });
 
+describe('session refresh', () => {
+  test('a valid refresh token gets new ID and access tokens', async () => {
+    mockCognito.adminInitiateAuth.mockReturnValue(ok({
+      AuthenticationResult: { IdToken: 'new-id', AccessToken: 'new-access', ExpiresIn: 3600 },
+    }));
+
+    const res = await auth.refreshSession(post({ refreshToken: 'refresh-1' }));
+
+    expect(bodyOf(res)).toEqual({ idToken: 'new-id', accessToken: 'new-access', expiresIn: 3600 });
+    expect(mockCognito.adminInitiateAuth.mock.calls[0][0]).toEqual({
+      UserPoolId: 'pool-1', ClientId: 'public-client', AuthFlow: 'REFRESH_TOKEN_AUTH',
+      AuthParameters: { REFRESH_TOKEN: 'refresh-1' },
+    });
+  });
+
+  test('a rotated refresh token is passed back', async () => {
+    mockCognito.adminInitiateAuth.mockReturnValue(ok({
+      AuthenticationResult: { IdToken: 'id', AccessToken: 'a', ExpiresIn: 3600, RefreshToken: 'refresh-2' },
+    }));
+
+    expect(bodyOf(await auth.refreshSession(post({ refreshToken: 'refresh-1' }))).refreshToken).toBe('refresh-2');
+  });
+
+  test.each([['NotAuthorizedException'], ['UserNotFoundException']])('%s (revoked or expired) is a 401', async (code) => {
+    mockCognito.adminInitiateAuth.mockReturnValue(fail(code));
+
+    const res = await auth.refreshSession(post({ refreshToken: 'revoked' }));
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  test.each([[{}], [{ refreshToken: 42 }], [{ refreshToken: '' }]])('rejects %o without calling Cognito', async (body) => {
+    expect((await auth.refreshSession(post(body))).statusCode).toBe(400);
+    expect(mockCognito.adminInitiateAuth).not.toHaveBeenCalled();
+  });
+});
+
 describe('/auth/me and logout', () => {
   test('returns the caller\'s own record', async () => {
     mockDb.get.mockReturnValue(ok({ Item: { userId: 'u1', name: 'Jo' } }));

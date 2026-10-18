@@ -63,6 +63,20 @@ describe('API Gateway', () => {
     expect(settings[key]).toMatchObject({ ThrottlingRateLimit: rate });
   });
 
+  test('refresh is throttled too', () => {
+    expect(settings['POST /~1auth~1refresh']).toMatchObject({ ThrottlingRateLimit: 20 });
+  });
+
+  test.each(['DEFAULT_4XX', 'DEFAULT_5XX'])('API Gateway\'s own %s errors carry CORS headers', (type) => {
+    template.hasResourceProperties('AWS::ApiGateway::GatewayResponse', {
+      ResponseType: type,
+      ResponseParameters: {
+        'gatewayresponse.header.Access-Control-Allow-Origin': "'*'",
+        'gatewayresponse.header.Access-Control-Allow-Headers': "'Content-Type,Authorization'",
+      },
+    });
+  });
+
   test('everything else keeps the stage-wide limit', () => {
     expect(settings['* /*']).toMatchObject({ ThrottlingRateLimit: 100, ThrottlingBurstLimit: 200 });
   });
@@ -73,7 +87,7 @@ describe('API Gateway', () => {
         && r.Properties.HttpMethod !== 'OPTIONS' && r.Properties.AuthorizationType === 'NONE')
       .map(([id]) => id);
     for (const id of publicMethods) {
-      expect(id).toMatch(/auth(login|register|confirm|resendcode)|availability|locations|pricing(calculate|estimate)|profiles(homeowner|tradie)|reviews|schedule|search|trades|paymentswebhook/);
+      expect(id).toMatch(/auth(login|register|confirm|resendcode|refresh)|availability|locations|pricing(calculate|estimate)|profiles(homeowner|tradie)|reviews|schedule|search|trades|paymentswebhook/);
     }
   });
 });

@@ -6,7 +6,7 @@ Reviewed on 19 Oct 2026 against `feat/frontend-parity`. Nothing critical is open
 
 | Area | Result |
 | --- | --- |
-| Identity | Handlers use the immutable `custom:userId` claim from the Cognito-verified ID token. Users can only edit `name` and `email`, so they can't change their role or ID |
+| Identity | Handlers use the immutable `custom:userId` claim from the Cognito-verified ID token. Users can only edit their `name`, so they can't change their role or ID |
 | Sign-up | A PreSignUp trigger rejects sign-ups that skip `POST /auth/register`. Only the backend's secret-holding client can set the role and user ID. Users are never auto-confirmed |
 | Login | Wrong email and wrong password give the same 401, so accounts can't be enumerated. Unverified users get 403 with `EMAIL_NOT_VERIFIED`. Cognito's own lockout applies after repeated failures |
 | Authorization | Every route except sign-in, sign-up, public browsing and the Stripe webhook needs a Cognito token. Booking, payment and pricing reads check that the caller is the booking's homeowner or tradie |

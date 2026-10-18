@@ -9,7 +9,7 @@ Status on 18 Oct 2026: not deployed. No AWS login was available on the machine t
 | Resource | Change | Risk |
 | --- | --- | --- |
 | Cognito user pool | Self sign-up turned on (guarded by a new PreSignUp Lambda that only allows sign-ups from `POST /auth/register`), email auto-verification, new email text | In-place update. Existing users are kept |
-| Cognito app client | Users can now only edit `name` and `email` | In-place update |
+| Cognito app client | Users can now only edit their `name` | In-place update |
 | Cognito registration client | New client used by `/auth/register` | Added |
 | Users table | New `TradeRateIndex` index (for `/pricing/estimate`) | In-place. CloudFormation allows one index change per table per deploy; this is the only one |
 | Other 7 tables | No change | None |
