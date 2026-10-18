@@ -65,6 +65,8 @@ test('reads the whole range in one paged query, not one per day', async () => {
   const days = bodyOf(await availability.getAvailability(week({ from: FROM, to: TO }))).availabilityByDate;
 
   expect(bookingQueries).toBe(2);
+  expect(mockDb.query.mock.calls.find(([p]) => p.TableName === 'bookings')[0].KeyConditionExpression)
+    .toBe('tradieId = :tradieId AND bookingDate BETWEEN :from AND :to');
   expect(days['2099-01-08'].hours).not.toContain(13);
 });
 

@@ -2,6 +2,8 @@
 
 A complete serverless backend for HomeLink tradies marketplace built with AWS CDK, featuring DynamoDB, Lambda, API Gateway, and Cognito authentication.
 
+> **Start with [DEVELOPMENT.md](DEVELOPMENT.md)** for setup, configuration and the current architecture, and [DEPLOY_PLAN.md](DEPLOY_PLAN.md) before deploying. Parts of this README and the older summary documents (`IMPLEMENTATION_SUMMARY.md`, `BACKEND_ANALYSIS.md`, `INDEX.md`) predate payments, email verification and the security review.
+
 ## Architecture Overview
 
 ```
