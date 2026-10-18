@@ -23,9 +23,11 @@ flowchart LR
   Cognito -->|PreSignUp trigger| PreSignUp[PreSignUp Lambda]
 ```
 
-**Request path.** The app sends the Cognito **ID token** as `Authorization: Bearer …`. API Gateway's Cognito authorizer verifies it. The handler reads the caller from the `custom:userId` and `custom:role` claims (`getUserId` / `getUserRole` in `utils.js`). Public routes (sign-in, sign-up, browsing tradies, the Stripe webhook) have no authorizer.
+**Request path.** The app sends the Cognito **ID token** as `Authorization: Bearer …`. ID tokens last an hour, and the app renews them with `POST /auth/refresh` (refresh token → new ID and access tokens). Logout revokes the refresh token. API Gateway's Cognito authorizer verifies it. The handler reads the caller from the `custom:userId` and `custom:role` claims (`getUserId` / `getUserRole` in `utils.js`). Public routes (sign-in, sign-up, browsing tradies, the Stripe webhook) have no authorizer.
 
-**Money path.** A homeowner pays with a Stripe destination charge. The backend calculates the amount from the tradie's rate (`calculatePricing` in `business-logic.js`): job price + 5% service fee + a card-fee markup. The tradie's Stripe Connect account receives the job price minus 10% commission (0% for Pro tradies), and HomeLink keeps the rest as the application fee. Webhooks confirm payments, payout readiness and Pro subscriptions.
+**Bookings** carry `tradieName` and `homeownerName`, copied when the booking is made. Reads fill them in for older bookings without writing back.
+
+**Money path.** A homeowner pays with a Stripe destination charge. The backend calculates the amount from the tradie's rate (`calculatePricing` in `business-logic.js`): job price + 5% service fee + a card-fee markup. The tradie's Stripe Connect account receives the job price minus 10% commission (0% for Pro tradies), and HomeLink keeps the rest as the application fee. Webhooks confirm payments, payout readiness and Pro subscriptions. Cancelling a paid booking with a refund (`/payments/refund-quote`, `/payments/cancel-booking`) exists behind the `refundsEnabled` flag, off by default. Its policy is configuration; see PAYMENT_INTEGRATION.md.
 
 ### Code layout
 
@@ -38,6 +40,7 @@ flowchart LR
 | `lib/lambdas/<area>/index.js` | Handlers for one area: auth, availability, bookings, messages, notifications, payments, pricing, profiles, reviews, schedule, search |
 | `lib/lambdas/<area>/utils.js` | Shared helpers (responses, CORS, identity, validation). **Identical in every folder**; edit one and copy it to all (a test checks) |
 | `lib/lambdas/<area>/business-logic.js` | Availability and pricing rules. **Identical in every folder**, same rule |
+| `lib/lambdas/payments/refunds.js` | Refund policy as pure functions (configuration-driven) |
 | `lib/lambdas/<area>/package.json` | Each Lambda bundles its own `aws-sdk` (v2) and, for payments, `stripe` |
 | `test/` | Jest tests. Handlers run with AWS and Stripe mocked; stack tests check the synthesized template |
 | `scripts/install-lambdas.js` | Installs each Lambda folder's dependencies before deploying |
@@ -107,6 +110,9 @@ Names only. Values come from CDK context, the deployed stack or Secrets Manager.
 | `proMonthlyPriceId`, `proAnnualPriceId` | Stripe Price IDs for HomeLink Pro (optional) |
 | `proCurrency`, `proMonthlyPriceCents`, `proAnnualPriceCents` | Inline Pro prices when no Price IDs are set |
 | `sesFromEmail`, `sesFromName`, `sesReplyTo`, `sesVerifiedDomain`, `sesConfigurationSet` | Send Cognito emails through SES instead of Cognito's built-in sender |
+| `refundsEnabled` | Turn on cancelling paid bookings with a refund (default off) |
+| `refundCutoffHours`, `refundLatePercent`, `refundKeepServiceFee`, `refundKeepProcessingFee` | Refund policy (placeholders until decided) |
+| `businessTimezone` | Time zone booking times are in, for the refund cut-off |
 
 ### Deploy-time environment
 
@@ -126,6 +132,7 @@ Names only. Values come from CDK context, the deployed stack or Secrets Manager.
 | `STRIPE_SECRET_ID` | Name of the Stripe secret |
 | `STRIPE_CURRENCY`, `STRIPE_FEE_PERCENT`, `STRIPE_FEE_FIXED` | Payment currency and card-fee markup |
 | `PRO_MONTHLY_PRICE_ID`, `PRO_ANNUAL_PRICE_ID`, `PRO_CURRENCY`, `PRO_MONTHLY_PRICE_CENTS`, `PRO_ANNUAL_PRICE_CENTS` | HomeLink Pro pricing |
+| `REFUNDS_ENABLED`, `REFUND_CUTOFF_HOURS`, `REFUND_LATE_PERCENT`, `REFUND_KEEP_SERVICE_FEE`, `REFUND_KEEP_PROCESSING_FEE`, `BUSINESS_TIMEZONE` | Refund flag and policy |
 | `AWS_REGION` | Provided by Lambda |
 
 ### Stripe secret (`homelink/stripe`, JSON)
