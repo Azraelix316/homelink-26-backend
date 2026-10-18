@@ -88,7 +88,7 @@ Comparison method: `cdk synth` of `main` (6cd83b4) and `feat/frontend-parity` (f
     - Register → confirm code → log in.
     - Tradie onboards payouts → homeowner books → pays with card `4242 4242 4242 4242`.
     - Stripe CLI: `stripe trigger payment_intent.succeeded`.
-11. Then push the frontend: the `backup/staging-2026-10-18` branch holds the matching UI, waiting for the backend to be live.
+11. Then release the frontend: `feat/e2e-tests` in `homelink-team-26-frontend` holds the matching UI (it includes `backup/staging-2026-10-18` plus fixes found by the end-to-end tests). Merge it into `staging` for Amplify to build. Deploy the backend first: the frontend relies on the backend's week-range availability and hash-route Stripe return links.
 
 ## Decisions for you
 
