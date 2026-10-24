@@ -50,6 +50,13 @@ describe('DynamoDB query contracts', () => {
     expect(code).toContain('REMOVE liveLocation');
   });
 
+  test('new requests store a confirmed job address and coordinates', () => {
+    const code = source('lib/lambdas/bookings/index.js');
+    expect(code).toContain('serviceAddress, serviceLocation');
+    expect(code).toContain('serviceAddress: cleanAddress');
+    expect(code).toContain('serviceLocation: { latitude, longitude, accuracy }');
+  });
+
   test('the stack targets Sydney and exposes the payments table to Lambdas', () => {
     const app = source('bin/homelink-26-backend.js');
     expect(app).toContain("process.env.HOMELINK_AWS_REGION || 'ap-southeast-2'");
