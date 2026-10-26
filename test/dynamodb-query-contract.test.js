@@ -66,6 +66,17 @@ describe('DynamoDB query contracts', () => {
     expect(stack).toContain("'schedule.removeTimeBlock'");
   });
 
+  test('account deletion is initiated in-app and retained for operational cleanup', () => {
+    const auth = source('lib/lambdas/auth/index.js');
+    const stack = source('lib/stack.js');
+    expect(auth).toContain('async function requestAccountDeletion');
+    expect(auth).toContain("accountStatus = :status");
+    expect(auth).toContain("'deletion_requested'");
+    expect(auth).toContain('within 30 days');
+    expect(stack).toContain("'auth.requestAccountDeletion'");
+    expect(stack).toContain("meResource.addMethod('DELETE'");
+  });
+
   test('the stack targets Sydney and exposes the payments table to Lambdas', () => {
     const app = source('bin/homelink-26-backend.js');
     expect(app).toContain("process.env.HOMELINK_AWS_REGION || 'ap-southeast-2'");
