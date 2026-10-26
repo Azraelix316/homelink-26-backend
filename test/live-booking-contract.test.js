@@ -37,4 +37,14 @@ describe('live booking contract', () => {
       reason: 'booked',
     });
   });
+
+  test('rejects a slot the tradie blocked on the calendar', () => {
+    const schedule = { Monday: { start: '09:00', end: '17:00' } };
+    const blocks = [{ date: '2026-09-14', startTime: '13:00', endTime: '14:00' }];
+
+    expect(isSlotAvailable('2026-09-14', '13:00', '14:00', schedule, [], [], 0, blocks)).toEqual({
+      available: false,
+      reason: 'blocked',
+    });
+  });
 });

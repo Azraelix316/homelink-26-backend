@@ -57,6 +57,15 @@ describe('DynamoDB query contracts', () => {
     expect(code).toContain('serviceLocation: { latitude, longitude, accuracy }');
   });
 
+  test('calendar time blocks are exposed and wired to authenticated routes', () => {
+    const schedule = source('lib/lambdas/schedule/index.js');
+    const stack = source('lib/stack.js');
+    expect(schedule).toContain('async function createTimeBlock');
+    expect(schedule).toContain("scheduleType: `block-${blockId}`");
+    expect(stack).toContain("'schedule.createTimeBlock'");
+    expect(stack).toContain("'schedule.removeTimeBlock'");
+  });
+
   test('the stack targets Sydney and exposes the payments table to Lambdas', () => {
     const app = source('bin/homelink-26-backend.js');
     expect(app).toContain("process.env.HOMELINK_AWS_REGION || 'ap-southeast-2'");
