@@ -83,7 +83,7 @@ async function main() {
     createdAt: new Date().toISOString(),
     environment: 'staging',
     apiBase: API_BASE,
-    note: 'Keep this file private. These users are filtered out of public search because their names and emails are marked as demo data.',
+    note: 'Keep this file private. The staging frontend filters these users from public search because their names and emails are marked as demo data. Deploy the latest backend to enforce the same rule at the API layer.',
     homeowner: publicAccount(accounts.homeowner, homeowner.user),
     tradie: {
       ...publicAccount(accounts.tradie, tradie.user),
