@@ -3,3 +3,6 @@ node_modules
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Generated staging credentials. Never commit or share this file publicly.
+.demo-accounts*.json

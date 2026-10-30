@@ -11,6 +11,7 @@
     "cdk:diff": "cdk diff",
     "cdk:deploy": "npm run install:lambdas && cdk deploy --require-approval=never --profile homelink",
     "cdk:destroy": "cdk destroy --force --profile homelink",
+    "demo:seed": "node scripts/create-demo-accounts.js",
     "test": "jest"
   },
   "devDependencies": {
